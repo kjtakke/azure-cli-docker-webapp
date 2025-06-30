@@ -1,86 +1,128 @@
+# Azure Container Deploy Script
 
+This Bash script automates the process of deploying a Docker container to Azure Container Instances (ACI). It handles logging into Azure and Azure Container Registry (ACR), pushing Docker images, and managing ACI resources.
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Usage](#usage)
+- [Script Options](#script-options)
+- [Default Variables](#default-variables)
+- [Execution Flow](#execution-flow)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Prerequisites
+
+- Azure CLI installed and configured on your local machine.
+- Docker installed and configured on your local machine.
+- A valid Azure subscription.
+- An Azure Container Registry (ACR) set up in your Azure subscription.
+
+## Usage
+
+To use the script, navigate to the directory containing the script and execute it with the following command:
 
 ```bash
-#!/bin/sh
-
-# =======================
-# Azure Container Deploy
-# =======================
-
-# Default Variables
-AZURE_RESOURCE_GROUP="default-group"
-AZURE_REGISTRY_NAME="myregistry"
-AZURE_IMAGE_NAME="myapp"
-AZURE_CONTAINER_NAME="myapp-instance"
-AZURE_LOCATION="australiaeast"
-AZURE_CPU="1"
-AZURE_MEMORY="1.5"
-AZURE_PORT="80"
-AZURE_DNS_LABEL="myapp"
-AZURE_TAG="latest"
-AZURE_PASSWORD="changeme"
-
-# Parse arguments
-while [ "$#" -gt 0 ]; do
-  case "$1" in
-    --group) AZURE_RESOURCE_GROUP="$2"; shift 2;;
-    --registry) AZURE_REGISTRY_NAME="$2"; shift 2;;
-    --image) AZURE_IMAGE_NAME="$2"; shift 2;;
-    --container) AZURE_CONTAINER_NAME="$2"; shift 2;;
-    --location) AZURE_LOCATION="$2"; shift 2;;
-    --cpu) AZURE_CPU="$2"; shift 2;;
-    --memory) AZURE_MEMORY="$2"; shift 2;;
-    --port) AZURE_PORT="$2"; shift 2;;
-    --dns) AZURE_DNS_LABEL="$2"; shift 2;;
-    --tag) AZURE_TAG="$2"; shift 2;;
-    --password) AZURE_PASSWORD="$2"; shift 2;;
-    --restart) RESTART_ONLY=true; shift;;
-    --delete-image) DELETE_IMAGE=true; shift;;
-    --delete-container) DELETE_CONTAINER=true; shift;;
-    *) echo "Unknown flag: $1"; exit 1;;
-  esac
-done
-
-# Derived values
-FULL_IMAGE="${AZURE_REGISTRY_NAME}.azurecr.io/${AZURE_IMAGE_NAME}:${AZURE_TAG}"
-
-# Azure login (interactive)
-echo "🔐 Logging into Azure..."
-az login
-
-echo "🔐 Logging into ACR..."
-az acr login --name "$AZURE_REGISTRY_NAME"
-
-# Optional delete steps
-[ "$DELETE_IMAGE" = true ] && az acr repository delete --name "$AZURE_REGISTRY_NAME" --repository "$AZURE_IMAGE_NAME" --yes
-[ "$DELETE_CONTAINER" = true ] && az container delete --name "$AZURE_CONTAINER_NAME" --resource-group "$AZURE_RESOURCE_GROUP" --yes
-
-# Restart only mode
-if [ "$RESTART_ONLY" = true ]; then
-  echo "🔄 Restarting container..."
-  az container restart --name "$AZURE_CONTAINER_NAME" --resource-group "$AZURE_RESOURCE_GROUP"
-  exit $?
-fi
-
-# Upload Docker image
-echo "📦 Tagging and pushing Docker image..."
-docker tag "${AZURE_IMAGE_NAME}:${AZURE_TAG}" "$FULL_IMAGE"
-docker push "$FULL_IMAGE"
-
-# Create Azure Container Instance
-echo "🚀 Creating Azure container instance..."
-az container create \
-  --name "$AZURE_CONTAINER_NAME" \
-  --resource-group "$AZURE_RESOURCE_GROUP" \
-  --image "$FULL_IMAGE" \
-  --cpu "$AZURE_CPU" \
-  --memory "$AZURE_MEMORY" \
-  --registry-login-server "${AZURE_REGISTRY_NAME}.azurecr.io" \
-  --registry-username "$AZURE_REGISTRY_NAME" \
-  --registry-password "$AZURE_PASSWORD" \
-  --dns-name-label "$AZURE_DNS_LABEL" \
-  --ports "$AZURE_PORT" \
-  --os-type Linux \
-  --location "$AZURE_LOCATION"
-
+./azure-container-deploy.sh [OPTIONS]
 ```
+
+## Script Options
+
+The script supports several command-line options to customize the deployment process:
+
+| Option            | Description                                          | Example                             |
+|-------------------|------------------------------------------------------|-------------------------------------|
+| `--group`         | Specify the Azure Resource Group.                    | `--group myResourceGroup`           |
+| `--registry`      | Specify the Azure Container Registry name.           | `--registry myRegistry`             |
+| `--image`         | Specify the Docker image name.                       | `--image myAppImage`                |
+| `--container`     | Specify the Azure Container Instance name.           | `--container myContainerInstance`   |
+| `--location`      | Specify the Azure region for deployment.             | `--location eastus`                 |
+| `--cpu`           | Specify the CPU cores for the container.             | `--cpu 2`                           |
+| `--memory`        | Specify the memory in GB for the container.          | `--memory 2.5`                      |
+| `--port`          | Specify the port to expose.                          | `--port 8080`                       |
+| `--dns`           | Specify the DNS label for the container.             | `--dns myapp`                       |
+| `--tag`           | Specify the Docker image tag.                        | `--tag v1.0`                        |
+| `--password`      | Specify the Azure Container Registry password.      | `--password yourPassword`           |
+| `--restart`       | Restart the existing container without redeploying.  | `--restart`                         |
+| `--delete-image`  | Delete the Docker image from ACR before deployment. | `--delete-image`                    |
+| `--delete-container` | Delete the container before deployment.           | `--delete-container`                |
+
+## Default Variables
+
+The script uses the following default values if not overridden by command-line options:
+
+- `AZURE_RESOURCE_GROUP="default-group"`
+- `AZURE_REGISTRY_NAME="myregistry"`
+- `AZURE_IMAGE_NAME="myapp"`
+- `AZURE_CONTAINER_NAME="myapp-instance"`
+- `AZURE_LOCATION="australiaeast"`
+- `AZURE_CPU="1"`
+- `AZURE_MEMORY="1.5"`
+- `AZURE_PORT="80"`
+- `AZURE_DNS_LABEL="myapp"`
+- `AZURE_TAG="latest"`
+- `AZURE_PASSWORD="changeme"`
+
+## Execution Flow
+
+1. **Azure Login:** The script starts by logging into Azure using `az login`.
+2. **ACR Login:** It then logs into the specified Azure Container Registry using `az acr login`.
+3. **Optional Deletion:** If specified, the script deletes the existing Docker image from ACR or the existing container in ACI.
+4. **Restart Only:** If the `--restart` option is used, the script restarts the specified container and exits.
+5. **Docker Image Upload:** The script tags and pushes the Docker image to the specified ACR.
+6. **Container Creation:** Finally, the script creates a new Azure Container Instance with the provided specifications.
+
+## Troubleshooting
+
+- **Azure Login Issues:** Ensure that your Azure CLI is correctly configured and that you have the necessary permissions to access the resources.
+- **ACR Login Issues:** Check that the ACR name is correct and that the credentials used are valid.
+- **Deployment Failures:** Review the output of the `az container create` command for specific error messages and adjust your parameters accordingly.
+
+## Contributing
+
+Contributions to improve this script are welcome. Please fork the repository, make your changes, and submit a pull request. Ensure that your changes are thoroughly tested and documented.
+
+## License
+
+This script is released under the MIT License. See the `LICENSE` file for more details.
+```
+
+This `README.md` provides a comprehensive guide to using and understanding the Azure container deployment script, ensuring that users can easily navigate and utilize its features.
+
+question
+add example on how to run the code deploy.sh --flag xxxx
+
+
+To enhance the `README.md` with an example of how to run the script, we can add a section under the "Usage" part. Here's an updated version of the relevant section:
+
+```markdown
+## Usage
+
+To use the script, navigate to the directory containing the script and execute it with the following command:
+
+```bash
+./azure-container-deploy.sh [OPTIONS]
+```
+
+### Example
+
+Here is an example of how to run the script with specific flags:
+
+```bash
+./azure-container-deploy.sh \
+  --group myResourceGroup \
+  --registry myRegistry \
+  --image myAppImage \
+  --container myContainerInstance \
+  --location eastus \
+  --cpu 2 \
+  --memory 2.5 \
+  --port 8080 \
+  --dns myapp \
+  --tag v1.0 \
+  --password yourPassword
+```
+
+This command will deploy a container instance with the specified parameters. Adjust the flags and their values according to your needs.
